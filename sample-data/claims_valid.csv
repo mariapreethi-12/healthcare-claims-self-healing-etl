@@ -1,0 +1,6 @@
+claim_id,patient_id,provider_id,diagnosis_code,procedure_code,claim_amount,claim_date,claim_status
+CLM-10001,PAT-201,PRV-101,E11.9,99213,185.50,2026-05-01,paid
+CLM-10002,PAT-202,PRV-104,I10,99214,230.00,2026-05-03,approved
+CLM-10003,PAT-203,PRV-101,J45.909,94640,95.75,2026-05-05,pending
+CLM-10004,PAT-204,PRV-108,M54.50,97110,140.25,2026-05-07,denied
+CLM-10005,PAT-205,PRV-104,Z00.00,99395,320.00,2026-05-08,submitted

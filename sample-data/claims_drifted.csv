@@ -1,0 +1,5 @@
+claim_id,member_id,doctor_id,dx_code,cpt_code,total_cost,date_of_service,status
+CLM-20001,MEM-301,DOC-21,E11.9,99213,210.25,2026-06-01,paid
+CLM-20002,MEM-302,DOC-24,I10,99214,175.00,2026-06-02,approved
+CLM-20003,MEM-303,DOC-21,J45.909,94640,88.50,2026-06-03,pending
+CLM-20004,MEM-304,DOC-28,M54.50,97110,125.00,2026-06-04,submitted
