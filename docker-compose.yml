@@ -21,6 +21,8 @@ services:
       DATABASE_URL: postgresql+psycopg://claims:claims@db:5432/claims
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
     depends_on:
       db:
@@ -35,5 +37,30 @@ services:
     ports:
       - "3000:80"
 
+  ollama:
+    image: ollama/ollama:0.6.2
+    profiles: ["ollama"]
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    ports:
+      - "11434:11434"
+
+  ollama-init:
+    image: ollama/ollama:0.6.2
+    profiles: ["ollama"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["ollama pull ${OLLAMA_MODEL:-llama3.2:3b}"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+
 volumes:
   claims_data:
+  ollama_data:

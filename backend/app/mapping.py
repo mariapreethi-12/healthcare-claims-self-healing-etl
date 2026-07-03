@@ -1,5 +1,6 @@
 import json
 from difflib import SequenceMatcher
+import httpx
 from .config import get_settings
 
 EXPECTED_COLUMNS = [
@@ -38,26 +39,74 @@ def mock_mapping(columns: list[str]) -> tuple[dict[str, str], dict[str, float]]:
     return mapping, confidence
 
 
-def suggest_mapping(columns: list[str]) -> tuple[dict[str, str], dict[str, float], str]:
+SYSTEM_PROMPT = (
+    "Map healthcare CSV source columns to the allowed target schema. "
+    "Return JSON with a 'mapping' object only. Omit unknown columns."
+)
+
+
+def _validated_mapping(proposed: dict, columns: list[str]) -> dict[str, str]:
+    valid: dict[str, str] = {}
+    for source, target in proposed.items():
+        if source in columns and target in EXPECTED_COLUMNS and target not in valid.values():
+            valid[source] = target
+    return valid
+
+
+def openai_mapping(columns: list[str]) -> dict[str, str]:
     settings = get_settings()
-    if not settings.openai_api_key:
-        mapping, confidence = mock_mapping(columns)
-        return mapping, confidence, "mock"
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=settings.openai_api_key)
-        response = client.chat.completions.create(
-            model=settings.openai_model,
-            response_format={"type": "json_object"},
-            temperature=0,
-            messages=[
-                {"role": "system", "content": "Map healthcare CSV source columns to the allowed target schema. Return JSON with a 'mapping' object only. Omit unknown columns."},
+    from openai import OpenAI
+    client = OpenAI(api_key=settings.openai_api_key, timeout=settings.llm_timeout_seconds)
+    response = client.chat.completions.create(
+        model=settings.openai_model,
+        response_format={"type": "json_object"},
+        temperature=0,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": json.dumps({"source_columns": columns, "target_columns": EXPECTED_COLUMNS})},
+        ],
+    )
+    proposed = json.loads(response.choices[0].message.content or "{}").get("mapping", {})
+    return _validated_mapping(proposed, columns)
+
+
+def ollama_mapping(columns: list[str]) -> dict[str, str]:
+    settings = get_settings()
+    response = httpx.post(
+        f"{settings.ollama_base_url.rstrip('/')}/api/chat",
+        timeout=settings.llm_timeout_seconds,
+        json={
+            "model": settings.ollama_model,
+            "stream": False,
+            "format": "json",
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": json.dumps({"source_columns": columns, "target_columns": EXPECTED_COLUMNS})},
             ],
-        )
-        proposed = json.loads(response.choices[0].message.content or "{}").get("mapping", {})
-        valid = {s: t for s, t in proposed.items() if s in columns and t in EXPECTED_COLUMNS}
-        return valid, {source: 0.9 for source in valid}, "openai"
-    except Exception:
-        mapping, confidence = mock_mapping(columns)
-        return mapping, confidence, "mock_fallback"
+        },
+    )
+    response.raise_for_status()
+    proposed = json.loads(response.json()["message"]["content"]).get("mapping", {})
+    return _validated_mapping(proposed, columns)
+
+
+def suggest_mapping(columns: list[str]) -> tuple[dict[str, str], dict[str, float], str]:
+    settings = get_settings()
+    providers: list[tuple[str, object]] = []
+    if settings.openai_api_key:
+        providers.append(("openai", openai_mapping))
+    if settings.ollama_base_url:
+        providers.append(("ollama", ollama_mapping))
+
+    attempted = False
+    for provider, mapper in providers:
+        attempted = True
+        try:
+            mapping = mapper(columns)
+            if mapping:
+                return mapping, {source: 0.9 for source in mapping}, provider
+        except Exception:
+            continue
+
+    mapping, confidence = mock_mapping(columns)
+    return mapping, confidence, "mock_fallback" if attempted else "mock"
